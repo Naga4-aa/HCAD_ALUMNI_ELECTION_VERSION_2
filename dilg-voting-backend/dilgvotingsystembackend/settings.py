@@ -83,13 +83,14 @@ WSGI_APPLICATION = 'dilgvotingsystembackend.wsgi.application'
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
-        "NAME": os.getenv("MYSQL_DATABASE", "dilg_voting_db"),
-        "USER": os.getenv("MYSQL_USER", "dilg_user"),
-        "PASSWORD": os.getenv("MYSQL_PASSWORD", "StrongPass123!"),
+        "NAME": os.getenv("MYSQL_DATABASE", "hcadalumni2025"),
+        "USER": os.getenv("MYSQL_USER", "hcadalumni2025"),
+        "PASSWORD": os.getenv("MYSQL_PASSWORD", "Holy_Cross_Alumni_Association_2025"),
         "HOST": os.getenv("MYSQL_HOST", "127.0.0.1"),
         "PORT": os.getenv("MYSQL_PORT", "3306"),
     }
 }
+
 
 # Optional local access to the legacy sqlite dump (for one-time data transfer).
 SQLITE_SOURCE_PATH = BASE_DIR / "db.sqlite3"
