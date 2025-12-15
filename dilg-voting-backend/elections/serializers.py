@@ -89,11 +89,19 @@ class VoterSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "voter_id",
+            "alumni_id",
+            "first_name",
+            "middle_name",
+            "last_name",
             "name",
+            "date_of_birth",
             "batch_year",
             "campus_chapter",
             "email",
             "phone",
+            "degree_program",
+            "employment_status",
+            "industry_field",
             "privacy_consent",
             "has_voted",
             "is_active",
@@ -108,19 +116,49 @@ class VoterMeSerializer(serializers.ModelSerializer):
         fields = [
             "name",
             "voter_id",
+            "alumni_id",
+            "first_name",
+            "middle_name",
+            "last_name",
             "has_voted",
+            "date_of_birth",
             "batch_year",
             "campus_chapter",
             "email",
             "phone",
+            "degree_program",
+            "employment_status",
+            "industry_field",
             "privacy_consent",
         ]
+
+
+class VoterProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Voter
+        fields = [
+            "first_name",
+            "middle_name",
+            "last_name",
+            "alumni_id",
+            "date_of_birth",
+            "batch_year",
+            "campus_chapter",
+            "email",
+            "phone",
+            "degree_program",
+            "employment_status",
+            "industry_field",
+            "privacy_consent",
+        ]
+        read_only_fields = []
 
 
 class VoteSerializer(serializers.ModelSerializer):
     voter_name = serializers.CharField(source="voter.name", read_only=True)
     candidate_name = serializers.CharField(source="candidate.full_name", read_only=True)
     position_name = serializers.CharField(source="position.get_name_display", read_only=True)
+    election_name = serializers.CharField(source="position.election.name", read_only=True)
 
     class Meta:
         model = Vote
@@ -132,9 +170,57 @@ class VoteSerializer(serializers.ModelSerializer):
             "position_name",
             "candidate",
             "candidate_name",
+            "election_name",
             "created_at",
         ]
         read_only_fields = ["created_at"]
+
+
+class VoterRegisterSerializer(serializers.Serializer):
+    first_name = serializers.CharField(max_length=100)
+    middle_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=100)
+    alumni_id = serializers.CharField(max_length=50)
+    date_of_birth = serializers.DateField()
+    degree_program = serializers.CharField(max_length=200)
+    batch_year = serializers.IntegerField()
+    campus_chapter = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    email = serializers.EmailField()
+    phone = serializers.CharField(max_length=50)
+    employment_status = serializers.CharField(max_length=80)
+    industry_field = serializers.CharField(max_length=150)
+    privacy_consent = serializers.BooleanField()
+    password = serializers.CharField(write_only=True, min_length=8, max_length=128)
+
+    def validate_alumni_id(self, value):
+        value = value.strip()
+        if Voter.objects.filter(alumni_id__iexact=value).exists():
+            raise serializers.ValidationError("Alumni ID already registered.")
+        return value
+
+    def validate(self, attrs):
+        try:
+            year = int(attrs.get("batch_year"))
+            if year < 1950 or year > 2100:
+                raise serializers.ValidationError({"batch_year": "Batch year looks invalid."})
+        except Exception:
+            raise serializers.ValidationError({"batch_year": "Batch year is required."})
+        if not attrs.get("privacy_consent"):
+            raise serializers.ValidationError({"privacy_consent": "Consent is required to register."})
+        return attrs
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        parts = [
+            validated_data.get("first_name", "").strip(),
+            validated_data.get("middle_name", "").strip(),
+            validated_data.get("last_name", "").strip(),
+        ]
+        validated_data["name"] = " ".join([p for p in parts if p]).strip()
+        voter = Voter(**validated_data)
+        voter.set_pin(password)
+        voter.save()
+        return voter
 
     def validate(self, attrs):
         candidate = attrs.get("candidate")

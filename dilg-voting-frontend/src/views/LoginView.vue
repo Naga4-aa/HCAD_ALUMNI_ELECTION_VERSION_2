@@ -7,10 +7,8 @@ import { useAuthStore } from '../stores/auth'
 const router = useRouter()
 const authStore = useAuthStore()
 
-const fullName = ref('')
-const batchYear = ref('')
-const campus = ref('Digos City')
-const consent = ref(false)
+const identifier = ref('')
+const password = ref('')
 const localError = ref('')
 const localMessage = ref('')
 
@@ -18,20 +16,15 @@ const handleLogin = async () => {
   localError.value = ''
   localMessage.value = ''
 
-  if (!fullName.value.trim() || !batchYear.value) {
-    localError.value = 'Full name and batch year are required.'
-    return
-  }
-
-  if (!consent.value) {
-    localError.value = 'Please confirm the consent checkbox.'
+  if (!identifier.value.trim() || !password.value) {
+    localError.value = 'Enter your Alumni ID / Voter ID / Email and password.'
     return
   }
 
   try {
-    await authStore.quickLogin(fullName.value.trim(), Number(batchYear.value), campus.value.trim(), consent.value)
-    localMessage.value = `Welcome, ${authStore.voter.name}. Redirecting...`
-    router.push('/vote')
+    await authStore.login(identifier.value.trim(), password.value)
+    localMessage.value = `Welcome, ${authStore.voter.name || 'voter'}. Redirecting...`
+    router.push('/portal')
   } catch (error) {
     localError.value = authStore.error || 'Login failed.'
   }
@@ -43,46 +36,30 @@ const handleLogin = async () => {
     <div class="w-full max-w-md bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
       <div class="text-center space-y-1">
         <p class="text-xs uppercase tracking-wide text-emerald-600 font-semibold">HCAD Alumni</p>
-        <h1 class="text-2xl font-semibold">Quick Entry</h1>
-        <p class="text-xs text-slate-500">Enter your name and batch year to continue to nomination or voting.</p>
+        <h1 class="text-2xl font-semibold">Alumni Login</h1>
+        <p class="text-xs text-slate-500">Use your Alumni ID / Voter ID / Email with your password.</p>
       </div>
 
       <div class="space-y-3">
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Full name</label>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Alumni ID / Voter ID / Email</label>
           <input
-            v-model="fullName"
+            v-model="identifier"
             type="text"
             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            placeholder="e.g. Juan Dela Cruz"
+            placeholder="e.g. A-12345 or you@example.com"
           />
         </div>
 
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Batch year</label>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Password</label>
           <input
-            v-model="batchYear"
-            type="number"
+            v-model="password"
+            type="password"
             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            placeholder="e.g. 2005"
+            placeholder="Enter your password"
           />
         </div>
-
-        <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Campus / Chapter</label>
-          <input
-            v-model="campus"
-            type="text"
-            class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-slate-50 text-slate-600 cursor-not-allowed"
-            placeholder="Digos City"
-            disabled
-          />
-        </div>
-
-        <label class="flex items-center gap-2 text-[11px] text-slate-600">
-          <input type="checkbox" v-model="consent" />
-          I consent to participate and agree to the election data policy.
-        </label>
 
         <button
           @click="handleLogin"
@@ -104,6 +81,7 @@ const handleLogin = async () => {
       </div>
 
       <div class="text-[11px] text-slate-500 text-center space-y-1">
+        <RouterLink to="/register" class="text-emerald-700 font-semibold">Need an account? Register here</RouterLink>
         <p>Admins / COMELEC: please use the admin login to manage voters, nominations, and results.</p>
         <RouterLink to="/admin-login" class="text-emerald-700 font-semibold">Go to admin login</RouterLink>
       </div>

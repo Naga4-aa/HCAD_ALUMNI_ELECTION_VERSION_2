@@ -10,9 +10,6 @@ const authStore = useAuthStore()
 const adminAuth = useAdminAuthStore()
 const route = useRoute()
 const router = useRouter()
-const ACCESS_GATE_KEY = 'hcad-access-granted'
-const ACCESS_GATE_NAME_KEY = 'hcad-access-name'
-const ACCESS_GATE_VERSION_KEY = 'hcad-access-version'
 const headerNotifOpen = ref(false)
 const headerNotifItems = ref([])
 const headerNotifUnread = ref(0)
@@ -20,12 +17,6 @@ const headerNotifLoading = ref(false)
 const headerNotifError = ref('')
 const headerNotifExpanded = ref(false)
 const headerNotifTimer = ref(null)
-const accessAllowed = ref(false)
-const accessGateName = ref('')
-const accessVersion = ref(null)
-const accessCodeInput = ref('')
-const accessError = ref('')
-const accessChecking = ref(false)
 const voterNotifOpen = ref(false)
 const voterNotifItems = ref([])
 const voterNotifUnread = ref(0)
@@ -44,7 +35,8 @@ const isAdminContext = computed(() => {
 const voterLinks = computed(() => {
   const links = [
     { to: '/', label: 'Home', show: !authStore.isAuthenticated },
-    { to: '/info', label: 'Registration', show: !authStore.isAuthenticated },
+    { to: '/register', label: 'Register', show: !authStore.isAuthenticated },
+    { to: '/portal', label: 'Portal', show: authStore.isAuthenticated },
     { to: '/nomination', label: 'Nomination', show: authStore.isAuthenticated },
     { to: '/vote', label: 'Ballot', show: authStore.isAuthenticated },
     { to: '/results', label: 'Results', show: authStore.isAuthenticated },
@@ -176,77 +168,6 @@ watch(
   { immediate: true },
 )
 
-const syncAccessStatus = async () => {
-  if (isAdminContext.value) {
-    return
-  }
-  const storedAllow = localStorage.getItem(ACCESS_GATE_KEY) === '1'
-  const storedVersion = localStorage.getItem(ACCESS_GATE_VERSION_KEY)
-  const storedName = localStorage.getItem(ACCESS_GATE_NAME_KEY)
-  try {
-    const res = await api.get('access/status/')
-    const gates = res.data?.gates || []
-    const match = gates.find((g) => g.name === storedName && String(g.version) === String(storedVersion))
-    accessAllowed.value = !!(storedAllow && match)
-    if (match) {
-      accessGateName.value = match.name
-      accessVersion.value = String(match.version)
-    } else {
-      accessGateName.value = ''
-      accessVersion.value = null
-      localStorage.removeItem(ACCESS_GATE_KEY)
-      localStorage.removeItem(ACCESS_GATE_VERSION_KEY)
-      localStorage.removeItem(ACCESS_GATE_NAME_KEY)
-    }
-  } catch (err) {
-    // On failure, keep the gate closed to avoid bypassing when the server is unreachable.
-    accessAllowed.value = false
-  }
-}
-
-const submitAccessCode = async () => {
-  const entered = accessCodeInput.value.trim()
-  if (!entered) {
-    accessError.value = 'Enter the passcode.'
-    return
-  }
-  accessChecking.value = true
-  accessError.value = ''
-  try {
-    const res = await api.post('access/check/', { passcode: entered })
-    const serverVersion = String(res.data?.version || '')
-    const serverName = res.data?.name || ''
-    accessAllowed.value = true
-    accessVersion.value = serverVersion
-    accessGateName.value = serverName
-    localStorage.setItem(ACCESS_GATE_KEY, '1')
-    if (serverVersion) {
-      localStorage.setItem(ACCESS_GATE_VERSION_KEY, serverVersion)
-    }
-    if (serverName) {
-      localStorage.setItem(ACCESS_GATE_NAME_KEY, serverName)
-    }
-  } catch (err) {
-    accessAllowed.value = false
-    localStorage.removeItem(ACCESS_GATE_KEY)
-    localStorage.removeItem(ACCESS_GATE_VERSION_KEY)
-    localStorage.removeItem(ACCESS_GATE_NAME_KEY)
-    accessError.value = err.response?.data?.error || 'Incorrect passcode.'
-  } finally {
-    accessChecking.value = false
-  }
-}
-
-watch(
-  () => isAdminContext.value,
-  (isAdmin) => {
-    if (!isAdmin) {
-      syncAccessStatus()
-    }
-  },
-  { immediate: true },
-)
-
 const handleVisibility = () => {
   if (document.visibilityState === 'visible' && adminAuth.isAuthenticated) {
     loadHeaderNotifications()
@@ -254,9 +175,6 @@ const handleVisibility = () => {
 }
 
 onMounted(() => {
-  if (!isAdminContext.value) {
-    syncAccessStatus()
-  }
   if (adminAuth.isAuthenticated) {
     loadHeaderNotifications()
     startHeaderPolling()
@@ -355,7 +273,7 @@ watch(
 </script>
 
 <template>
-  <div class="min-h-screen text-slate-800 app-shell" v-if="isAdminContext || accessAllowed">
+  <div class="min-h-screen text-slate-800 app-shell">
     <header class="header-bar sticky top-0 z-20">
       <div class="relative max-w-screen-2xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
         <div class="flex items-center gap-3">
@@ -484,6 +402,7 @@ watch(
 
             <div v-if="adminAuth.isAuthenticated" class="hidden sm:block text-right leading-tight">
               <p class="font-semibold">Admin: {{ adminAuth.admin?.full_name || adminAuth.admin?.username }}</p>
+              <p class="text-[11px] text-slate-500 capitalize">Role: {{ adminAuth.admin?.role === 'super_admin' ? 'Super Admin' : 'Frontend Admin' }}</p>
             </div>
 
             <RouterLink
@@ -643,37 +562,6 @@ watch(
     <main :class="['max-w-full mx-0 px-2 sm:px-3 lg:px-4 py-6', isAdminContext ? 'admin-dashboard' : 'voter-shell']">
       <RouterView />
     </main>
-  </div>
-  <div v-else class="min-h-screen flex items-center justify-center app-shell px-4">
-    <div class="w-full max-w-md bg-white/90 backdrop-blur border border-slate-200 shadow-2xl rounded-2xl p-6 space-y-4">
-      <div class="flex items-center gap-3">
-        <img :src="Logo" alt="HCAD Alumni" class="h-12 w-12 rounded-full border border-emerald-100 object-cover bg-white shadow-sm" />
-        <div>
-          <p class="text-lg font-semibold text-slate-800">HCAD Alumni Election</p>
-          <p class="text-sm text-slate-600">Enter the shared passcode to continue.</p>
-        </div>
-      </div>
-      <div class="space-y-2">
-        <label class="text-sm font-semibold text-slate-700" for="access-code">Passcode</label>
-        <input
-          id="access-code"
-          v-model="accessCodeInput"
-          type="password"
-          class="w-full rounded-xl border border-slate-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-[rgba(196,151,60,0.35)] focus:border-[var(--hcad-gold)]"
-          placeholder="Enter passcode"
-          @keyup.enter="submitAccessCode"
-        />
-        <p v-if="accessError" class="text-sm text-rose-600">{{ accessError }}</p>
-        <p class="text-[13px] text-slate-500">We will remember this on this device until you clear your browser data or the admin changes the passcode.</p>
-      </div>
-      <button
-        class="w-full rounded-xl bg-emerald-600 text-white font-semibold py-2.5 shadow-sm hover:bg-emerald-700 disabled:opacity-60"
-        :disabled="accessChecking"
-        @click="submitAccessCode"
-      >
-        {{ accessChecking ? 'Checking...' : 'Continue' }}
-      </button>
-    </div>
   </div>
 </template>
 

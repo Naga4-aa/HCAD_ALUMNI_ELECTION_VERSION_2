@@ -41,14 +41,14 @@ onMounted(() => {
     <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
       <h2 class="text-xl font-semibold text-slate-900">Registration instructions</h2>
       <p class="text-sm text-slate-600 mt-2">
-        Alumni can now enter with <strong>full name + batch/year</strong> (quick entry). Provide your campus/chapter and contact
-        details to help COMELEC verify you. Consent is required to proceed.
+        Create your alumni portal account with Alumni ID, date of birth, official email, mobile number, and a strong password (min 8 chars).
+        Provide degree/program, batch, employment status, and industry so the alumni office can verify and engage you properly.
       </p>
       <ul class="text-sm text-slate-700 list-disc list-inside mt-3 space-y-1">
-        <li>Use your exact full name and batch/year so your record can be verified.</li>
-        <li>Optional: add campus/chapter and contact info to help admins confirm identity.</li>
-        <li>You must check the consent box: "I agree to the processing of my personal data for the purpose of elections."</li>
-        <li>If admins disable quick entry, they may issue Voter IDs/PINs for manual login.</li>
+        <li>Identity: Alumni ID, date of birth, official email, mobile number.</li>
+        <li>Security: Strong password; you will sign in with Alumni ID / Voter ID / email + password.</li>
+        <li>Data for engagement: degree/program, batch/year, employment status, industry/field, campus/chapter.</li>
+        <li>Consent is required to proceed.</li>
       </ul>
     </div>
 

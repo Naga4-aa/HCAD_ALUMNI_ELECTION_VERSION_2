@@ -26,7 +26,7 @@ export const useAuthStore = defineStore('auth', {
       this.error = ''
 
       try {
-        const res = await api.post('voter/login/', { voter_id, pin })
+        const res = await api.post('voter/login/', { identifier: voter_id, password: pin })
 
         this.token = res.data.token
         this.voter = res.data.voter
@@ -88,6 +88,43 @@ export const useAuthStore = defineStore('auth', {
       sessionStorage.removeItem('voterToken')
       sessionStorage.removeItem('voterData')
       setAuthToken(null)
+    },
+
+    setVoter(voterData) {
+      this.voter = voterData
+      if (voterData) {
+        sessionStorage.setItem('voterData', JSON.stringify(voterData))
+      } else {
+        sessionStorage.removeItem('voterData')
+      }
+    },
+
+    async register(payload) {
+      this.loading = true
+      this.error = ''
+      try {
+        const res = await api.post('voter/register/', payload)
+        this.token = res.data.token
+        this.voter = res.data.voter
+        sessionStorage.setItem('voterToken', this.token)
+        sessionStorage.setItem('voterData', JSON.stringify(this.voter))
+        setAuthToken(this.token)
+      } catch (error) {
+        if (error.response?.data) {
+          const data = error.response.data
+          this.error =
+            typeof data === 'string'
+              ? data
+              : Object.values(data)
+                  .flat()
+                  .join(' ')
+        } else {
+          this.error = 'Registration failed.'
+        }
+        throw error
+      } finally {
+        this.loading = false
+      }
     },
   },
 })

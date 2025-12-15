@@ -124,11 +124,19 @@ class Position(models.Model):
 
 class Voter(models.Model):
     voter_id = models.CharField(max_length=50, unique=True, blank=True)
+    alumni_id = models.CharField(max_length=50, unique=True, null=True, blank=True)
     name = models.CharField(max_length=150)
+    first_name = models.CharField(max_length=100, blank=True)
+    middle_name = models.CharField(max_length=100, blank=True)
+    last_name = models.CharField(max_length=100, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    degree_program = models.CharField(max_length=200, blank=True)
     batch_year = models.PositiveIntegerField()
     campus_chapter = models.CharField(max_length=150, blank=True)
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=50, blank=True)
+    employment_status = models.CharField(max_length=80, blank=True)
+    industry_field = models.CharField(max_length=150, blank=True)
     privacy_consent = models.BooleanField(default=False)
     pin = models.CharField(max_length=128, blank=True)  # hashed
     has_voted = models.BooleanField(default=False)
@@ -160,6 +168,9 @@ class Voter(models.Model):
         return check_password(raw_pin, self.pin)
 
     def save(self, *args, **kwargs):
+        if (self.first_name or self.last_name) and not self.name:
+            parts = [self.first_name, self.middle_name, self.last_name]
+            self.name = " ".join([p.strip() for p in parts if p]).strip()
         if not self.voter_id:
             self.voter_id = generate_voter_id()
         if self.pin and not self.pin.startswith("pbkdf2_"):

@@ -16,7 +16,6 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .models import (
-    AccessGate,
     Candidate,
     Election,
     Notification,
@@ -37,10 +36,12 @@ from .serializers import (
     PositionSerializer,
     VoterMeSerializer,
     VoterSerializer,
+    VoterProfileUpdateSerializer,
     VoteSerializer,
     AdminVoterCreateSerializer,
     ElectionReminderSerializer,
     NotificationSerializer,
+    VoterRegisterSerializer,
 )
 
 User = get_user_model()
@@ -117,29 +118,6 @@ def maybe_auto_publish(election: Election):
     return election
 
 
-# Access gate helpers
-ACCESS_GATE_NAME = getattr(settings, "ACCESS_GATE_NAME", "default")
-DEFAULT_ACCESS_CODE = "demo-passcode"
-
-
-def ensure_access_gates():
-    """
-    Make sure there's at least one gate. If none exists, create the default.
-    """
-    if not AccessGate.objects.exists():
-        gate = AccessGate(name=ACCESS_GATE_NAME or "default")
-        gate.set_passcode(DEFAULT_ACCESS_CODE)
-        gate.save()
-
-
-def list_access_gates():
-    """
-    Return all gates. If none exist, create the default one first.
-    """
-    ensure_access_gates()
-    return list(AccessGate.objects.all())
-
-
 # =======================
 #  VOTER AUTH
 # =======================
@@ -149,47 +127,42 @@ def list_access_gates():
 @permission_classes([AllowAny])
 def access_status(request):
     """
-    Returns the current passcode versions so the frontend can invalidate old cookies
-    when admins change the passcode. Supports multiple gates.
+    Passcode requirement removed: always return open access.
     """
-    gates = list_access_gates()
-    payload = [{"name": g.name, "version": g.version} for g in gates]
-    return Response({"gates": payload})
+    return Response({"gates": [], "passcode_required": False})
 
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def access_check(request):
     """
-    Validate a shared passcode stored on the server. Matches against any gate.
+    Passcode requirement removed: always succeed.
     """
-    passcode = (request.data.get("passcode") or "").strip()
-    if not passcode:
-        return Response({"error": "Passcode is required"}, status=400)
-
-    gates = list_access_gates()
-    for gate in gates:
-        if gate.check_passcode(passcode):
-            return Response({"ok": True, "name": gate.name, "version": gate.version})
-
-    return Response({"error": "Incorrect passcode"}, status=400)
+    return Response({"ok": True, "name": "open", "version": "0"})
 
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def voter_login(request):
-    voter_id = request.data.get("voter_id")
-    pin = request.data.get("pin")
+    identifier = request.data.get("identifier") or request.data.get("voter_id") or request.data.get("email")
+    password = request.data.get("password") or request.data.get("pin")
 
-    if not voter_id or not pin:
-        return Response({"error": "voter_id and pin are required"}, status=400)
+    if not identifier or not password:
+        return Response({"error": "identifier and password are required"}, status=400)
 
-    try:
-        voter = Voter.objects.get(voter_id=voter_id, is_active=True)
-    except Voter.DoesNotExist:
+    voter = (
+        Voter.objects.filter(
+            Q(voter_id__iexact=identifier)
+            | Q(email__iexact=identifier)
+            | Q(alumni_id__iexact=identifier)
+        )
+        .filter(is_active=True)
+        .first()
+    )
+    if not voter:
         return Response({"error": "Invalid credentials"}, status=400)
 
-    if not voter.check_pin(pin):
+    if not voter.check_pin(password):
         return Response({"error": "Invalid credentials"}, status=400)
 
     voter.start_session()
@@ -282,6 +255,83 @@ def voter_me(request):
     if not voter:
         return Response({"authenticated": False}, status=200)
     return Response({"authenticated": True, "voter": VoterMeSerializer(voter).data})
+
+
+@api_view(["GET", "PUT"])
+def voter_profile(request):
+    """
+    Voter self-service profile: view and update contact details and consent.
+    """
+    voter = get_authenticated_voter(request)
+    if not voter:
+        return Response({"error": "Authentication required"}, status=401)
+
+    if request.method == "GET":
+        return Response(VoterSerializer(voter).data)
+
+    serializer = VoterProfileUpdateSerializer(voter, data=request.data, partial=True)
+    if serializer.is_valid():
+        # Keep composite name synced when name parts change.
+        if any(k in serializer.validated_data for k in ["first_name", "middle_name", "last_name"]):
+            parts = [
+                serializer.validated_data.get("first_name", voter.first_name).strip(),
+                serializer.validated_data.get("middle_name", voter.middle_name).strip(),
+                serializer.validated_data.get("last_name", voter.last_name).strip(),
+            ]
+            serializer.validated_data["name"] = " ".join([p for p in parts if p]).strip()
+        serializer.save()
+        return Response(VoterMeSerializer(voter).data)
+    return Response(serializer.errors, status=400)
+
+
+@api_view(["GET"])
+def voter_history(request):
+    """
+    Return the voter’s participation footprint: votes and nominations.
+    """
+    voter = get_authenticated_voter(request)
+    if not voter:
+        return Response({"error": "Authentication required"}, status=401)
+
+    votes_qs = (
+        Vote.objects.filter(voter=voter)
+        .select_related("position", "position__election", "candidate")
+        .order_by("-created_at")
+    )
+    nominations_qs = (
+        Nomination.objects.filter(nominator=voter)
+        .select_related("position", "election")
+        .order_by("-created_at")
+    )
+
+    return Response(
+        {
+            "votes": VoteSerializer(votes_qs, many=True).data,
+            "nominations": NominationSerializer(nominations_qs, many=True).data,
+        }
+    )
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def voter_register(request):
+    """
+    Secure registration with richer profile fields and strong password.
+    """
+    serializer = VoterRegisterSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=400)
+
+    voter = serializer.save(privacy_consent=True)
+    voter.start_session()
+
+    return Response(
+        {
+            "token": voter.session_token,
+            "voter": VoterMeSerializer(voter).data,
+        },
+        status=201,
+    )
 
 
 # =======================
@@ -602,6 +652,7 @@ def admin_login(request):
     if not user or not user.is_staff:
         return Response({"error": "Invalid admin credentials"}, status=400)
 
+    role = "super_admin" if user.is_superuser else "frontend_admin"
     token = signing.dumps({"user_id": user.id}, salt=ADMIN_SALT)
 
     return Response(
@@ -611,6 +662,8 @@ def admin_login(request):
                 "id": user.id,
                 "username": user.username,
                 "full_name": user.get_full_name() or user.username,
+                "role": role,
+                "is_superuser": user.is_superuser,
             },
         }
     )
@@ -626,6 +679,7 @@ def admin_me(request):
     admin_user = get_admin_from_request(request)
     if not admin_user:
         return Response({"authenticated": False}, status=200)
+    role = "super_admin" if admin_user.is_superuser else "frontend_admin"
     return Response(
         {
             "authenticated": True,
@@ -633,6 +687,7 @@ def admin_me(request):
                 "username": admin_user.username,
                 "full_name": admin_user.get_full_name() or admin_user.username,
                 "is_superuser": admin_user.is_superuser,
+                "role": role,
             },
         }
     )

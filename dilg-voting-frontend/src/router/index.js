@@ -5,6 +5,8 @@ import InfoView from '../views/InfoView.vue'
 import VoteView from '../views/VoteView.vue'
 import NominationView from '../views/NominationView.vue'
 import ResultsView from '../views/ResultsView.vue'
+import VoterPortalView from '../views/VoterPortalView.vue'
+import RegisterView from '../views/RegisterView.vue'
 import AdminDashboard from '../views/AdminDashboard.vue'
 import AdminLoginView from '../views/AdminLoginView.vue'
 import { useAuthStore } from '../stores/auth'
@@ -14,10 +16,17 @@ const routes = [
   { path: '/', name: 'home', component: LandingView },
   { path: '/info', name: 'info', component: InfoView },
   { path: '/login', name: 'login', component: LoginView },
+  { path: '/register', name: 'register', component: RegisterView },
   {
     path: '/vote',
     name: 'vote',
     component: VoteView,
+    meta: { requiresVoter: true },
+  },
+  {
+    path: '/portal',
+    name: 'portal',
+    component: VoterPortalView,
     meta: { requiresVoter: true },
   },
   {
@@ -59,7 +68,7 @@ router.beforeEach((to, from, next) => {
   }
 
   if (to.name === 'login' && authStore.isAuthenticated) {
-    return next({ name: 'vote' })
+    return next({ name: 'portal' })
   }
 
   if (to.name === 'admin-login' && adminAuth.isAuthenticated) {

@@ -10,9 +10,12 @@ urlpatterns = [
 
     # Public / Voter
     path("voter/login/", views.voter_login),
+    path("voter/register/", views.voter_register),
     path("voter/quick-login/", views.voter_quick_login),
     path("voter/logout/", views.voter_logout),
     path("voter/me/", views.voter_me),
+    path("voter/profile/", views.voter_profile),
+    path("voter/history/", views.voter_history),
 
     path("elections/current/", views.current_election),
     path("elections/results/", views.published_results),

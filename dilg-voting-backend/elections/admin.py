@@ -1,9 +1,7 @@
 # elections/admin.py
-from django import forms
 from django.contrib import admin, messages
 
 from .models import (
-    AccessGate,
     Candidate,
     Election,
     ElectionReminder,
@@ -14,35 +12,6 @@ from .models import (
     Notification,
     generate_pin,
 )
-
-
-class AccessGateForm(forms.ModelForm):
-    new_passcode = forms.CharField(
-        required=False,
-        help_text="Enter a new passcode. Leave blank to keep the current one.",
-        widget=forms.TextInput(attrs={"autocomplete": "off"}),
-    )
-
-    class Meta:
-        model = AccessGate
-        fields = ("name", "new_passcode")
-
-    def save(self, commit=True):
-        obj = super().save(commit=False)
-        new_code = self.cleaned_data.get("new_passcode")
-        if new_code:
-            obj.set_passcode(new_code)
-        if commit:
-            obj.save()
-        return obj
-
-
-@admin.register(AccessGate)
-class AccessGateAdmin(admin.ModelAdmin):
-    form = AccessGateForm
-    list_display = ("name", "version", "updated_at")
-    readonly_fields = ("version", "updated_at")
-    fields = ("name", "new_passcode", "version", "updated_at")
 
 
 @admin.register(Election)
