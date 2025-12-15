@@ -37,8 +37,8 @@ const voterLinks = computed(() => {
     { to: '/', label: 'Home', show: !authStore.isAuthenticated },
     { to: '/register', label: 'Register', show: !authStore.isAuthenticated },
     { to: '/portal', label: 'Portal', show: authStore.isAuthenticated },
-    { to: '/nomination', label: 'Nomination', show: authStore.isAuthenticated },
-    { to: '/vote', label: 'Ballot', show: authStore.isAuthenticated },
+    { to: '/nomination', label: 'Nomination', show: authStore.isAuthenticated && authStore.voter?.is_approved !== false },
+    { to: '/vote', label: 'Ballot', show: authStore.isAuthenticated && authStore.voter?.is_approved !== false },
     { to: '/results', label: 'Results', show: authStore.isAuthenticated },
   ]
   return links.filter((l) => l.show)

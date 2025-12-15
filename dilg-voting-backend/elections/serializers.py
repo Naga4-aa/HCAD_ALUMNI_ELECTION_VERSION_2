@@ -89,6 +89,7 @@ class VoterSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "voter_id",
+            "student_id",
             "alumni_id",
             "first_name",
             "middle_name",
@@ -105,6 +106,8 @@ class VoterSerializer(serializers.ModelSerializer):
             "privacy_consent",
             "has_voted",
             "is_active",
+            "is_approved",
+            "pin_reset_requested",
             "created_at",
         ]
         read_only_fields = ["voter_id", "has_voted", "is_active", "created_at"]
@@ -116,6 +119,7 @@ class VoterMeSerializer(serializers.ModelSerializer):
         fields = [
             "name",
             "voter_id",
+            "student_id",
             "alumni_id",
             "first_name",
             "middle_name",
@@ -130,6 +134,8 @@ class VoterMeSerializer(serializers.ModelSerializer):
             "employment_status",
             "industry_field",
             "privacy_consent",
+            "is_approved",
+            "pin_reset_requested",
         ]
 
 
@@ -140,6 +146,7 @@ class VoterProfileUpdateSerializer(serializers.ModelSerializer):
             "first_name",
             "middle_name",
             "last_name",
+            "student_id",
             "alumni_id",
             "date_of_birth",
             "batch_year",
@@ -180,7 +187,7 @@ class VoterRegisterSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=100)
     middle_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=100)
-    alumni_id = serializers.CharField(max_length=50)
+    student_id = serializers.CharField(max_length=50)
     date_of_birth = serializers.DateField()
     degree_program = serializers.CharField(max_length=200)
     batch_year = serializers.IntegerField()
@@ -192,10 +199,10 @@ class VoterRegisterSerializer(serializers.Serializer):
     privacy_consent = serializers.BooleanField()
     password = serializers.CharField(write_only=True, min_length=8, max_length=128)
 
-    def validate_alumni_id(self, value):
+    def validate_student_id(self, value):
         value = value.strip()
-        if Voter.objects.filter(alumni_id__iexact=value).exists():
-            raise serializers.ValidationError("Alumni ID already registered.")
+        if Voter.objects.filter(student_id__iexact=value).exists():
+            raise serializers.ValidationError("Student ID already registered.")
         return value
 
     def validate(self, attrs):

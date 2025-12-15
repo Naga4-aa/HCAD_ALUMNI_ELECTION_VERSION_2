@@ -16,6 +16,8 @@ urlpatterns = [
     path("voter/me/", views.voter_me),
     path("voter/profile/", views.voter_profile),
     path("voter/history/", views.voter_history),
+    path("voter/change-password/", views.voter_change_password),
+    path("voter/request-reset-pin/", views.voter_request_reset_pin),
 
     path("elections/current/", views.current_election),
     path("elections/results/", views.published_results),
@@ -33,6 +35,9 @@ urlpatterns = [
     path("admin/logout/", views.admin_logout),
     path("admin/me/", views.admin_me),
     path("admin/voters/", views.admin_voters),
+    path("admin/voters/<int:voter_id>/approve/", views.admin_approve_voter),
+    path("admin/voters/<int:voter_id>/reject/", views.admin_reject_voter),
+    path("admin/voters/<int:voter_id>/reset-pin/", views.admin_reset_voter_pin),
     path("admin/tally/", views.admin_tally),
     path("admin/stats/", views.admin_stats),
     path("admin/nominations/", views.admin_nominations),

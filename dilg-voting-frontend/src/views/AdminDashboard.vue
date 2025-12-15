@@ -74,6 +74,7 @@ const resettingVoters = ref(false)
 const resettingElection = ref(false)
 let voterTimer = null
 let tallyTimer = null
+let notificationsTimer = null
 let electionMessageTimer = null
 
 // Themed confirm dialog
@@ -250,6 +251,38 @@ const removeCandidatePhoto = async (candidateId) => {
     alert(err.response?.data?.error || 'Failed to remove photo.')
   } finally {
     candidatePhotoUploading.value = { ...candidatePhotoUploading.value, [candidateId]: false }
+  }
+}
+
+const approveVoter = async (voter) => {
+  const confirmed = await askConfirm({
+    title: 'Approve registration',
+    message: `Approve ${voter.name || 'this voter'} and issue an Alumni ID?`,
+    confirmText: 'Approve',
+    tone: 'neutral',
+  })
+  if (!confirmed) return
+  try {
+    await api.post(`admin/voters/${voter.id}/approve/`)
+    await loadVoters()
+  } catch (err) {
+    alert(err.response?.data?.error || 'Failed to approve voter.')
+  }
+}
+
+const rejectVoter = async (voter) => {
+  const confirmed = await askConfirm({
+    title: 'Reject registration',
+    message: `Reject ${voter.name || 'this voter'}? This will log them out. They must register again.`,
+    confirmText: 'Reject',
+    tone: 'danger',
+  })
+  if (!confirmed) return
+  try {
+    await api.post(`admin/voters/${voter.id}/reject/`)
+    await loadVoters()
+  } catch (err) {
+    alert(err.response?.data?.error || 'Failed to reject voter.')
   }
 }
 
@@ -667,16 +700,28 @@ const loadVoters = async () => {
   }
 }
 
-const filteredVoters = computed(() => {
+const filteredApprovedVoters = computed(() => {
   const term = voterSearch.value.trim().toLowerCase()
-  if (!term) return voters.value
-  return voters.value.filter((v) => {
+  const base = approvedVoters.value
+  if (!term) return base
+  return base.filter((v) => {
     const name = (v.name || '').toLowerCase()
     const id = (v.voter_id || '').toLowerCase()
+    const student = (v.student_id || '').toLowerCase()
+    const alumni = (v.alumni_id || '').toLowerCase()
     const batch = String(v.batch_year || '').toLowerCase()
-    return name.includes(term) || id.includes(term) || batch.includes(term)
+    return name.includes(term) || id.includes(term) || student.includes(term) || alumni.includes(term) || batch.includes(term)
   })
 })
+
+// Backward-compatible filtered list (approved only) for existing table rendering
+const filteredVoters = filteredApprovedVoters
+
+// Only show active accounts; rejected/inactive are hidden from both lists.
+const pendingVoters = computed(() => voters.value.filter((v) => v.is_active !== false && v.is_approved === false))
+const approvedVoters = computed(() => voters.value.filter((v) => v.is_active !== false && v.is_approved !== false))
+const activeVoterTab = ref('approved') // 'approved' | 'pending'
+const resetRequests = computed(() => voters.value.filter((v) => v.pin_reset_requested))
 
 const focusVoterFromQuery = (val) => {
   if (!val) return
@@ -710,6 +755,7 @@ onMounted(async () => {
       loadReminders(),
       loadElection(),
       loadVoters(),
+      loadNotifications(),
     ])
   } catch (err) {
     errorMessage.value = 'Failed to load admin data.'
@@ -732,12 +778,18 @@ onMounted(async () => {
   voterTimer = setInterval(() => {
     loadVoters()
   }, 10000)
+
+  // Auto-refresh notifications so new reset requests surface without manual refresh
+  notificationsTimer = setInterval(() => {
+    loadNotifications()
+  }, 15000)
 })
 
 onUnmounted(() => {
   if (tallyTimer) clearInterval(tallyTimer)
   if (voterTimer) clearInterval(voterTimer)
   if (nominationsTimer.value) clearInterval(nominationsTimer.value)
+  if (notificationsTimer) clearInterval(notificationsTimer)
   if (electionMessageTimer) clearTimeout(electionMessageTimer)
 })
 </script>
@@ -1198,6 +1250,18 @@ onUnmounted(() => {
       <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <h3 class="text-sm font-semibold">Voters</h3>
         <div class="flex flex-wrap gap-2">
+          <span
+            class="px-3 py-1 rounded-full text-[11px] font-semibold"
+            :class="pendingVoters.length ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'"
+          >
+            Pending approvals: {{ pendingVoters.length }}
+          </span>
+          <span
+            class="px-3 py-1 rounded-full text-[11px] font-semibold"
+            :class="resetRequests.length ? 'bg-sky-50 text-sky-800 border border-sky-200' : 'bg-slate-50 text-slate-600 border border-slate-200'"
+          >
+            PIN reset requests: {{ resetRequests.length }}
+          </span>
           <div class="relative flex-1 min-w-[340px] max-w-[560px]">
             <input
               v-model="voterSearch"
@@ -1207,6 +1271,63 @@ onUnmounted(() => {
               class="w-full text-xs px-3 py-1.5 rounded-lg border border-emerald-200 bg-white/90 shadow-inner"
             />
           </div>
+        </div>
+      </div>
+      <div
+        v-if="pendingVoters.length"
+        class="border border-amber-200 bg-amber-50 rounded-xl p-3 space-y-2 shadow-sm"
+      >
+        <div class="flex items-center justify-between gap-2">
+          <p class="text-sm font-semibold text-amber-800">Pending registrations</p>
+          <span class="text-[11px] px-2 py-1 rounded-full bg-white border border-amber-200 text-amber-700">Pending: {{ pendingVoters.length }}</span>
+        </div>
+        <div class="max-h-40 overflow-y-auto border border-amber-100 rounded-lg bg-white">
+          <table class="w-full min-w-[520px] text-xs">
+            <thead class="bg-amber-50">
+              <tr class="text-left text-slate-600">
+                <th class="px-3 py-2">Name</th>
+                <th class="px-3 py-2">IDs</th>
+                <th class="px-3 py-2">Batch</th>
+                <th class="px-3 py-2 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="v in pendingVoters" :key="v.id" class="border-t border-slate-100">
+                <td class="px-3 py-2">{{ v.name }}</td>
+                <td class="px-3 py-2 leading-tight">
+                  <div>Student: {{ v.student_id || '-' }}</div>
+                  <div>Alumni: {{ v.alumni_id || 'pending' }}</div>
+                  <div>Voter: {{ v.voter_id || '-' }}</div>
+                  <div v-if="v.pin_reset_requested" class="text-[11px] text-sky-700 font-semibold">PIN reset requested</div>
+                </td>
+                <td class="px-3 py-2">{{ v.batch_year || 'N/A' }}</td>
+                <td class="px-3 py-2 text-right">
+                  <div class="flex flex-wrap justify-end gap-2">
+                    <button
+                      v-if="v.pin_reset_requested"
+                      class="px-3 py-1.5 rounded-lg text-[11px] border border-sky-200 text-sky-800 bg-white hover:bg-sky-50"
+                      @click="resetVoterPin(v)"
+                    >
+                      Reset login PIN
+                    </button>
+                    <span v-else class="text-[11px] text-slate-400 self-center">No reset request</span>
+                    <button
+                      class="px-3 py-1.5 rounded-lg text-[11px] bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
+                      @click="approveVoter(v)"
+                    >
+                      Approve & issue Alumni ID
+                    </button>
+                    <button
+                      class="px-3 py-1.5 rounded-lg text-[11px] border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100"
+                      @click="rejectVoter(v)"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
       <div v-if="loadingVoters" class="text-xs text-slate-500">Loading voters.</div>
@@ -1219,20 +1340,51 @@ onUnmounted(() => {
             <thead class="bg-emerald-50/50">
               <tr class="text-left text-slate-500">
                 <th class="px-3 py-2">Name</th>
-                <th class="px-3 py-2">Voter ID</th>
+                <th class="px-3 py-2">IDs</th>
                 <th class="px-3 py-2">Batch</th>
+                <th class="px-3 py-2">Status</th>
                 <th class="px-3 py-2">Voted</th>
-                <th class="px-3 py-2 text-right">Created</th>
+                <th class="px-3 py-2 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="v in filteredVoters" :key="v.id" class="border-t border-slate-100">
                 <td class="px-3 py-2">{{ v.name }}</td>
-                <td class="px-3 py-2">{{ v.voter_id }}</td>
+                <td class="px-3 py-2 leading-tight">
+                  <div>Student: {{ v.student_id || '-' }}</div>
+                  <div>Alumni: {{ v.alumni_id || 'pending' }}</div>
+                  <div>Voter: {{ v.voter_id || '-' }}</div>
+                  <div v-if="v.pin_reset_requested" class="text-[11px] text-sky-700 font-semibold">PIN reset requested</div>
+                </td>
                 <td class="px-3 py-2">{{ v.batch_year || 'N/A' }}</td>
+                <td class="px-3 py-2">
+                  <span
+                    class="px-2 py-1 rounded-full text-[11px] font-semibold"
+                    :class="v.is_approved === false ? 'bg-amber-50 text-amber-700 border border-amber-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-100'"
+                  >
+                    {{ v.is_approved === false ? 'Pending' : 'Approved' }}
+                  </span>
+                </td>
                 <td class="px-3 py-2">{{ v.has_voted ? 'Yes' : 'No' }}</td>
                 <td class="px-3 py-2 text-right">
-                  <span class="text-[11px] text-slate-600">{{ formatDateTime(v.created_at) }}</span>
+                  <div class="flex flex-wrap justify-end gap-2">
+                    <button
+                      v-if="v.pin_reset_requested"
+                      class="px-3 py-1.5 rounded-lg text-[11px] border border-sky-200 text-sky-800 bg-white hover:bg-sky-50"
+                      @click="resetVoterPin(v)"
+                    >
+                      Reset login PIN
+                    </button>
+                    <span v-else class="text-[11px] text-slate-400 self-center">No reset request</span>
+                    <button
+                      v-if="v.is_approved === false"
+                      class="px-3 py-1.5 rounded-lg text-[11px] bg-emerald-600 text-white shadow-sm hover:bg-emerald-700"
+                      @click="approveVoter(v)"
+                    >
+                      Approve & issue Alumni ID
+                    </button>
+                    <span class="text-[11px] text-slate-600 self-center">{{ formatDateTime(v.created_at) }}</span>
+                  </div>
                 </td>
               </tr>
             </tbody>

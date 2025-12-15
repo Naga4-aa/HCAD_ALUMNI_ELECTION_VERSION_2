@@ -26,6 +26,16 @@ def generate_pin(length: int = 6):
     return "".join(secrets.choice(string.digits) for _ in range(length))
 
 
+def generate_alumni_id():
+    """Generate a unique alumni ID like ALUM-2025-XXXX."""
+    year = str(timezone.now().year)
+    while True:
+        suffix = "".join(secrets.choice(string.digits) for _ in range(4))
+        code = f"ALUM-{year}-{suffix}"
+        if not Voter.objects.filter(alumni_id__iexact=code).exists():
+            return code
+
+
 # -------------------------
 #  CORE MODELS
 # -------------------------
@@ -124,6 +134,7 @@ class Position(models.Model):
 
 class Voter(models.Model):
     voter_id = models.CharField(max_length=50, unique=True, blank=True)
+    student_id = models.CharField(max_length=50, unique=True, null=True, blank=True)
     alumni_id = models.CharField(max_length=50, unique=True, null=True, blank=True)
     name = models.CharField(max_length=150)
     first_name = models.CharField(max_length=100, blank=True)
@@ -141,6 +152,8 @@ class Voter(models.Model):
     pin = models.CharField(max_length=128, blank=True)  # hashed
     has_voted = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
+    is_approved = models.BooleanField(default=False)
+    pin_reset_requested = models.BooleanField(default=False)
     session_token = models.CharField(max_length=36, blank=True, null=True, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

@@ -25,6 +25,7 @@ from .models import (
     Vote,
     ElectionReminder,
     generate_pin,
+    generate_alumni_id,
     POSITION_CHOICES,
 )
 from .serializers import (
@@ -144,7 +145,13 @@ def access_check(request):
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def voter_login(request):
-    identifier = request.data.get("identifier") or request.data.get("voter_id") or request.data.get("email")
+    identifier = (
+        request.data.get("identifier")
+        or request.data.get("voter_id")
+        or request.data.get("alumni_id")
+        or request.data.get("student_id")
+        or request.data.get("email")
+    )
     password = request.data.get("password") or request.data.get("pin")
 
     if not identifier or not password:
@@ -155,6 +162,7 @@ def voter_login(request):
             Q(voter_id__iexact=identifier)
             | Q(email__iexact=identifier)
             | Q(alumni_id__iexact=identifier)
+            | Q(student_id__iexact=identifier)
         )
         .filter(is_active=True)
         .first()
@@ -254,6 +262,7 @@ def voter_me(request):
     voter = get_authenticated_voter(request)
     if not voter:
         return Response({"authenticated": False}, status=200)
+    role = "pending" if not voter.is_approved else "voter"
     return Response({"authenticated": True, "voter": VoterMeSerializer(voter).data})
 
 
@@ -311,6 +320,34 @@ def voter_history(request):
         }
     )
 
+@api_view(["POST"])
+def voter_change_password(request):
+    """
+    Change password/PIN after verifying current password.
+    """
+    voter = get_authenticated_voter(request)
+    if not voter:
+        return Response({"error": "Authentication required"}, status=401)
+
+    current = (request.data.get("current_password") or "").strip()
+    new_pw = (request.data.get("new_password") or "").strip()
+    confirm_pw = (request.data.get("confirm_password") or "").strip()
+
+    if not current or not new_pw or not confirm_pw:
+        return Response({"error": "current_password, new_password, and confirm_password are required"}, status=400)
+    if len(new_pw) < 6:
+        return Response({"error": "New password must be at least 6 characters"}, status=400)
+    if new_pw != confirm_pw:
+        return Response({"error": "New password and confirmation do not match"}, status=400)
+    if not voter.check_pin(current):
+        return Response({"error": "Current password is incorrect"}, status=400)
+
+    voter.set_pin(new_pw)
+    voter.session_token = None  # log out current session; frontend should refresh token on next login
+    voter.save(update_fields=["pin", "session_token"])
+
+    return Response({"message": "Password updated. Please log in again."})
+
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -322,7 +359,7 @@ def voter_register(request):
     if not serializer.is_valid():
         return Response(serializer.errors, status=400)
 
-    voter = serializer.save(privacy_consent=True)
+    voter = serializer.save(privacy_consent=True, is_approved=False)
     voter.start_session()
 
     return Response(
@@ -455,6 +492,8 @@ def nominate(request):
     voter = get_authenticated_voter(request)
     if not voter:
         return Response({"error": "Authentication required"}, status=401)
+    if not voter.is_approved:
+        return Response({"error": "Your registration is pending approval."}, status=403)
 
     if not voter.privacy_consent:
         return Response({"error": "Consent is required"}, status=400)
@@ -552,6 +591,8 @@ def submit_ballot(request):
     voter = get_authenticated_voter(request)
     if not voter:
         return Response({"error": "Authentication required"}, status=401)
+    if not voter.is_approved:
+        return Response({"error": "Your registration is pending approval."}, status=403)
 
     if not voter.privacy_consent:
         return Response({"error": "Consent is required"}, status=400)
@@ -714,6 +755,8 @@ def admin_voters(request):
     data = serializer.validated_data
     # Force campus to the Digos City chapter for this deployment.
     data["campus_chapter"] = "Digos City"
+    data.setdefault("is_approved", True)
+    data.setdefault("is_active", True)
     raw_pin = data.pop("pin", "").strip() or None
     if not raw_pin:
         raw_pin = generate_pin()
@@ -725,6 +768,48 @@ def admin_voters(request):
     out = VoterSerializer(voter).data
     out["pin"] = raw_pin
     return Response(out, status=201)
+
+
+@api_view(["POST"])
+def admin_approve_voter(request, voter_id):
+    admin_user = get_admin_from_request(request)
+    if not admin_user:
+        return Response({"error": "Admin authentication required"}, status=403)
+
+    try:
+        voter = Voter.objects.get(id=voter_id)
+    except Voter.DoesNotExist:
+        return Response({"error": "Voter not found"}, status=404)
+
+    if not voter.alumni_id:
+        voter.alumni_id = generate_alumni_id()
+    voter.is_approved = True
+    voter.is_active = True
+    voter.pin_reset_requested = False
+    voter.save(update_fields=["alumni_id", "is_approved", "is_active", "pin_reset_requested"])
+
+    return Response(VoterSerializer(voter).data)
+
+
+@api_view(["POST"])
+def admin_reject_voter(request, voter_id):
+    admin_user = get_admin_from_request(request)
+    if not admin_user:
+        return Response({"error": "Admin authentication required"}, status=403)
+
+    try:
+        voter = Voter.objects.get(id=voter_id)
+    except Voter.DoesNotExist:
+        return Response({"error": "Voter not found"}, status=404)
+
+    # Clear session to log out and mark inactive/unapproved.
+    voter.session_token = None
+    voter.is_active = False
+    voter.is_approved = False
+    voter.pin_reset_requested = False
+    voter.save(update_fields=["session_token", "is_active", "is_approved", "pin_reset_requested"])
+
+    return Response({"message": "Voter registration rejected."})
 
 
 @api_view(["GET"])
@@ -1284,7 +1369,9 @@ def admin_reset_voters(request):
     for v in voters:
         v.has_voted = False
         v.is_active = True
+        v.is_approved = True
         v.session_token = None
+        v.pin_reset_requested = False
         if reset_pins:
             new_pin = generate_pin()
             v.set_pin(new_pin)
@@ -1299,6 +1386,77 @@ def admin_reset_voters(request):
             "updated": output if reset_pins else [],
         }
     )
+
+
+@api_view(["POST"])
+def admin_reset_voter_pin(request, voter_id):
+    """
+    Reset a single voter's PIN/password and end their session.
+    """
+    admin = get_admin_from_request(request)
+    if not admin:
+        return Response({"error": "Admin authentication required"}, status=403)
+
+    try:
+        voter = Voter.objects.get(id=voter_id)
+    except Voter.DoesNotExist:
+        return Response({"error": "Voter not found"}, status=404)
+
+    new_pin = generate_pin()
+    voter.set_pin(new_pin)
+    voter.session_token = None
+    voter.pin_reset_requested = False
+    voter.save(update_fields=["pin", "session_token", "pin_reset_requested"])
+
+    return Response({"voter_id": voter.voter_id, "pin": new_pin})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def voter_request_reset_pin(request):
+    """
+    Allow a voter to request an admin reset by identifier (Student/Alumni/Voter ID or email).
+    Marks the account for admin attention; admin can then reset and clear the flag.
+    """
+    identifier = (
+        request.data.get("identifier")
+        or request.data.get("student_id")
+        or request.data.get("alumni_id")
+        or request.data.get("voter_id")
+        or request.data.get("email")
+    )
+    if not identifier:
+        return Response({"error": "identifier is required"}, status=400)
+
+    voter = (
+        Voter.objects.filter(
+            Q(student_id__iexact=identifier)
+            | Q(alumni_id__iexact=identifier)
+            | Q(voter_id__iexact=identifier)
+            | Q(email__iexact=identifier)
+        )
+        .filter(is_active=True)
+        .first()
+    )
+    if not voter:
+        return Response({"error": "No matching active voter found"}, status=404)
+
+    voter.pin_reset_requested = True
+    voter.save(update_fields=["pin_reset_requested"])
+
+    # Notify admins so they can act on the request.
+    Notification.objects.create(
+        type="pin_reset_request",
+        message=(
+            f"PIN reset requested by {voter.name or 'voter'} "
+            f"(Voter ID: {voter.voter_id or '—'}, "
+            f"Student ID: {voter.student_id or '—'}, "
+            f"Alumni ID: {voter.alumni_id or 'pending'})"
+        ),
+        voter=None,
+    )
+
+    return Response({"message": "Reset request sent to admin."})
 
 
 @api_view(["POST"])
@@ -1324,7 +1482,9 @@ def admin_reset_election(request):
         v.has_voted = False
         v.session_token = None
         v.is_active = True
-        v.save(update_fields=["has_voted", "session_token", "is_active"])
+        v.is_approved = True
+        v.pin_reset_requested = False
+        v.save(update_fields=["has_voted", "session_token", "is_active", "is_approved", "pin_reset_requested"])
 
     # Clear the election timeline and deactivate until new dates are set.
     election.nomination_start = None

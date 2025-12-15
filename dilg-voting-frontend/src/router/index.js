@@ -63,6 +63,11 @@ router.beforeEach((to, from, next) => {
     return next({ name: 'login' })
   }
 
+  const requiresApproval = ['nomination', 'vote']
+  if (to.name && requiresApproval.includes(to.name.toString()) && authStore.isAuthenticated && authStore.voter?.is_approved === false) {
+    return next({ name: 'portal' })
+  }
+
   if (to.meta.requiresAdmin && !adminAuth.isAuthenticated) {
     return next({ name: 'admin-login' })
   }

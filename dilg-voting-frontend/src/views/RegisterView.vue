@@ -11,7 +11,7 @@ const form = ref({
   first_name: '',
   middle_name: '',
   last_name: '',
-  alumni_id: '',
+  student_id: '',
   date_of_birth: '',
   degree_program: '',
   batch_year: '',
@@ -57,7 +57,7 @@ const handleRegister = async () => {
         <p class="text-xs uppercase tracking-wide text-emerald-600 font-semibold">HCAD Alumni</p>
         <h1 class="text-2xl font-semibold text-slate-900">Create your alumni portal account</h1>
         <p class="text-sm text-slate-600">
-          Provide your alumni identity and contact details. You will use your Alumni ID or email with a password to sign in.
+          Provide your alumni identity and contact details. You will use your Student ID (temporary) or email with a password to sign in. Approved accounts receive an Alumni ID.
         </p>
       </div>
     </div>
@@ -65,22 +65,23 @@ const handleRegister = async () => {
     <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
       <div>
         <h2 class="text-lg font-semibold text-slate-900">1) Identity & Security</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-3">
           <div>
             <label class="text-sm font-semibold text-slate-700">First name</label>
             <input v-model="form.first_name" type="text" class="w-full mt-1 rounded-lg border border-slate-300 px-3 py-2 shadow-sm" />
-          </div>
-          <div>
-            <label class="text-sm font-semibold text-slate-700">Last name</label>
-            <input v-model="form.last_name" type="text" class="w-full mt-1 rounded-lg border border-slate-300 px-3 py-2 shadow-sm" />
           </div>
           <div>
             <label class="text-sm font-semibold text-slate-700">Middle name</label>
             <input v-model="form.middle_name" type="text" class="w-full mt-1 rounded-lg border border-slate-300 px-3 py-2 shadow-sm" />
           </div>
           <div>
-            <label class="text-sm font-semibold text-slate-700">Alumni ID</label>
-            <input v-model="form.alumni_id" type="text" class="w-full mt-1 rounded-lg border border-slate-300 px-3 py-2 shadow-sm" />
+            <label class="text-sm font-semibold text-slate-700">Last name</label>
+            <input v-model="form.last_name" type="text" class="w-full mt-1 rounded-lg border border-slate-300 px-3 py-2 shadow-sm" />
+          </div>
+          <div class="lg:col-span-1 md:col-span-2">
+            <label class="text-sm font-semibold text-slate-700">Student ID (from HCAD/Registrar)</label>
+            <input v-model="form.student_id" type="text" class="w-full mt-1 rounded-lg border border-slate-300 px-3 py-2 shadow-sm" />
+            <p class="text-xs text-slate-500 mt-1">If you need assistance, contact the alumni office.</p>
           </div>
           <div>
             <label class="text-sm font-semibold text-slate-700">Date of birth</label>

@@ -29,6 +29,21 @@ const handleLogin = async () => {
     localError.value = authStore.error || 'Login failed.'
   }
 }
+
+const requestReset = async () => {
+  localError.value = ''
+  localMessage.value = ''
+  if (!identifier.value.trim()) {
+    localError.value = 'Enter your Student/Alumni/Voter ID or email to request a reset.'
+    return
+  }
+  try {
+    await api.post('voter/request-reset-pin/', { identifier: identifier.value.trim() })
+    localMessage.value = 'Reset request sent to admin.'
+  } catch (err) {
+    localError.value = err.response?.data?.error || 'Could not send reset request.'
+  }
+}
 </script>
 
 <template>
@@ -37,17 +52,17 @@ const handleLogin = async () => {
       <div class="text-center space-y-1">
         <p class="text-xs uppercase tracking-wide text-emerald-600 font-semibold">HCAD Alumni</p>
         <h1 class="text-2xl font-semibold">Alumni Login</h1>
-        <p class="text-xs text-slate-500">Use your Alumni ID / Voter ID / Email with your password.</p>
+        <p class="text-xs text-slate-500">Use your Student ID / Alumni ID / Voter ID / Email with your password.</p>
       </div>
 
       <div class="space-y-3">
         <div>
-          <label class="block text-xs font-semibold text-slate-600 mb-1">Alumni ID / Voter ID / Email</label>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Student ID / Alumni ID / Voter ID / Email</label>
           <input
             v-model="identifier"
             type="text"
             class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            placeholder="e.g. A-12345 or you@example.com"
+            placeholder="e.g. S-12345 or you@example.com"
           />
         </div>
 
@@ -78,6 +93,14 @@ const handleLogin = async () => {
             {{ localError }}
           </p>
         </div>
+
+        <button
+          @click="requestReset"
+          type="button"
+          class="w-full inline-flex justify-center items-center rounded-lg border border-slate-300 px-4 py-2 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50"
+        >
+          Request admin to reset PIN
+        </button>
       </div>
 
       <div class="text-[11px] text-slate-500 text-center space-y-1">

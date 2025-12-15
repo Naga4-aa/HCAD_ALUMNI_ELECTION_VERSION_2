@@ -20,6 +20,16 @@ const loadingProfile = ref(true)
 const savingProfile = ref(false)
 const profileMessage = ref('')
 const profileError = ref('')
+const passwordForm = ref({
+  current_password: '',
+  new_password: '',
+  confirm_password: '',
+})
+const pinResetMessage = ref('')
+const pinResetError = ref('')
+const passwordSaving = ref(false)
+const passwordMessage = ref('')
+const passwordError = ref('')
 
 const historyLoading = ref(true)
 const historyError = ref('')
@@ -36,6 +46,9 @@ const voterDisplayName = computed(() => {
   return parts.length ? parts.join(' ') : voterName.value
 })
 const voterId = computed(() => authStore.voter?.voter_id || profile.value.voter_id || '')
+const studentId = computed(() => authStore.voter?.student_id || profile.value.student_id || '')
+const alumniId = computed(() => authStore.voter?.alumni_id || profile.value.alumni_id || '')
+const isApproved = computed(() => authStore.voter?.is_approved !== false && profile.value.is_approved !== false)
 
 const loadProfile = async () => {
   loadingProfile.value = true
@@ -93,6 +106,43 @@ const loadHistory = async () => {
   }
 }
 
+const changePassword = async () => {
+  passwordMessage.value = ''
+  passwordError.value = ''
+  if (!passwordForm.value.current_password || !passwordForm.value.new_password) {
+    passwordError.value = 'Enter current and new password.'
+    return
+  }
+  if (passwordForm.value.new_password !== passwordForm.value.confirm_password) {
+    passwordError.value = 'New password and confirmation must match.'
+    return
+  }
+  passwordSaving.value = true
+  try {
+    await api.post('voter/change-password/', passwordForm.value)
+    passwordMessage.value = 'Password updated. Please log in again.'
+    passwordForm.value.current_password = ''
+    passwordForm.value.new_password = ''
+    passwordForm.value.confirm_password = ''
+    authStore.logout()
+  } catch (err) {
+    passwordError.value = err.response?.data?.error || 'Could not update password.'
+  } finally {
+    passwordSaving.value = false
+  }
+}
+
+const requestAdminReset = async () => {
+  pinResetMessage.value = ''
+  pinResetError.value = ''
+  try {
+    await api.post('voter/request-reset-pin/', { identifier: authStore.voter?.voter_id || authStore.voter?.alumni_id || authStore.voter?.student_id })
+    pinResetMessage.value = 'Reset request sent to admin.'
+  } catch (err) {
+    pinResetError.value = err.response?.data?.error || 'Could not send reset request.'
+  }
+}
+
 onMounted(() => {
   loadProfile()
   loadHistory()
@@ -105,25 +155,34 @@ onMounted(() => {
       <div>
         <p class="text-sm text-slate-500">Welcome back</p>
         <p class="text-2xl font-semibold text-slate-800">{{ voterDisplayName }}</p>
-        <p class="text-sm text-slate-500">Voter ID: {{ voterId || '—' }}</p>
+        <p class="text-sm text-slate-500">Student ID: {{ studentId || '—' }} • Alumni ID: {{ alumniId || 'pending' }} • Voter ID: {{ voterId || '—' }}</p>
       </div>
       <div class="flex gap-2">
         <span class="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">Voter portal</span>
         <span
-          v-if="authStore.voter?.has_voted"
+          v-if="!isApproved"
+          class="px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200"
+        >
+          Pending approval
+        </span>
+        <span
+          v-else-if="authStore.voter?.has_voted"
           class="px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200"
         >
           Ballot submitted
         </span>
       </div>
-    </div>
+  </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <div class="bg-white rounded-2xl shadow-md border border-slate-200 p-5 lg:col-span-2">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-lg font-semibold text-slate-800">Profile & Contact</h2>
-          <span v-if="loadingProfile" class="text-xs text-slate-500">Loading…</span>
-        </div>
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="bg-white rounded-2xl shadow-md border border-slate-200 p-5 lg:col-span-2">
+      <div v-if="!isApproved" class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        Your registration is pending approval. You can review your profile, but nomination and voting unlock after verification. Alumni ID will be issued upon approval.
+      </div>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-slate-800">Profile & Contact</h2>
+        <span v-if="loadingProfile" class="text-xs text-slate-500">Loading…</span>
+      </div>
         <p class="text-sm text-slate-500 mb-4">
           Keep your info current so we can reach you about elections and alumni updates.
         </p>
@@ -223,20 +282,28 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="bg-white rounded-2xl shadow-md border border-slate-200 p-5">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-lg font-semibold text-slate-800">Account Snapshot</h2>
-        </div>
+    <div class="bg-white rounded-2xl shadow-md border border-slate-200 p-5">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-slate-800">Account Snapshot</h2>
+      </div>
         <ul class="text-sm text-slate-700 space-y-2">
           <li class="flex justify-between">
             <span>Status</span>
             <span class="font-semibold">
-              {{ authStore.voter?.is_active === false ? 'Inactive' : 'Active' }}
+              {{ authStore.voter?.is_active === false ? 'Inactive' : isApproved ? 'Active' : 'Pending approval' }}
             </span>
           </li>
           <li class="flex justify-between">
             <span>Has voted</span>
             <span class="font-semibold">{{ authStore.voter?.has_voted ? 'Yes' : 'No' }}</span>
+          </li>
+          <li class="flex justify-between">
+            <span>Student ID</span>
+            <span class="font-semibold">{{ studentId || '—' }}</span>
+          </li>
+          <li class="flex justify-between">
+            <span>Alumni ID</span>
+            <span class="font-semibold">{{ alumniId || 'Pending' }}</span>
           </li>
           <li class="flex justify-between">
             <span>Batch year</span>
@@ -247,6 +314,68 @@ onMounted(() => {
             <span class="font-semibold">{{ profile.campus_chapter || '—' }}</span>
           </li>
         </ul>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-md border border-slate-200 p-5 lg:col-span-1">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-slate-800">Change password</h2>
+      </div>
+      <p class="text-sm text-slate-500 mb-3">Confirm with your current password to set a new one.</p>
+      <div v-if="passwordError" class="mb-2 text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2">
+        {{ passwordError }}
+      </div>
+      <div v-if="passwordMessage" class="mb-2 text-sm text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
+        {{ passwordMessage }}
+      </div>
+      <div class="space-y-2">
+        <div>
+          <label class="text-sm font-semibold text-slate-700">Current password</label>
+          <input
+            v-model="passwordForm.current_password"
+            type="password"
+            class="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-[rgba(196,151,60,0.35)]"
+          />
+        </div>
+        <div>
+          <label class="text-sm font-semibold text-slate-700">New password</label>
+          <input
+            v-model="passwordForm.new_password"
+            type="password"
+            class="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-[rgba(196,151,60,0.35)]"
+          />
+        </div>
+        <div>
+          <label class="text-sm font-semibold text-slate-700">Confirm new password</label>
+          <input
+            v-model="passwordForm.confirm_password"
+            type="password"
+            class="w-full mt-1 rounded-lg border border-slate-200 px-3 py-2 shadow-sm focus:outline-none focus:ring-2 focus:ring-[rgba(196,151,60,0.35)]"
+          />
+        </div>
+        <button
+          class="w-full rounded-lg bg-[var(--hcad-navy)] text-white font-semibold py-2.5 shadow-sm hover:bg-[var(--hcad-navy-dark)] disabled:opacity-60"
+          :disabled="passwordSaving"
+          @click="changePassword"
+        >
+          {{ passwordSaving ? 'Updating…' : 'Update password' }}
+        </button>
+        <div class="pt-2 border-t border-slate-200 space-y-2">
+          <p class="text-[13px] text-slate-600">Forgot your password? Request an admin reset.</p>
+          <div v-if="pinResetError" class="text-sm text-rose-600 bg-rose-50 border border-rose-100 rounded-xl px-3 py-2">
+            {{ pinResetError }}
+          </div>
+          <div v-if="pinResetMessage" class="text-sm text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2">
+            {{ pinResetMessage }}
+          </div>
+          <button
+            type="button"
+            class="w-full rounded-lg border border-slate-300 bg-white text-slate-700 font-semibold py-2.5 shadow-sm hover:bg-slate-50"
+            @click="requestAdminReset"
+          >
+            Request admin reset PIN
+          </button>
+        </div>
       </div>
     </div>
 
